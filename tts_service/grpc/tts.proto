@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package tts;
+
+service TextToSpeech {
+  rpc GenerateAudio (GenerateRequest) returns (GenerateReply);
+}
+
+message GenerateRequest {
+  string pdf_path = 1;
+  int32 start_page = 2;
+  int32 end_page = 3;
+}
+
+message GenerateReply {
+  string output_audio_path = 1;
+  string message = 2;
+}

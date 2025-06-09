@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Audio Converter</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            width: 80%;
+            max-width: 600px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #4CAF50;
+            background-color: #f8f8f8;
+        }
+        .page-range {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .page-range input {
+            width: 80px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .audio-player {
+            width: 100%;
+            margin-top: 20px;
+        }
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-style: italic;
+        }
+        .error {
+            color: #f44336;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .success {
+            color: #4CAF50;
+            text-align: center;
+            margin-top: 10px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .playlist {
+            margin-top: 20px;
+            width: 100%;
+        }
+        .playlist-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .playlist-item.current {
+            background-color: #e8f5e9;
+        }
+        .playlist-item:hover {
+            background-color: #f5f5f5;
+        }
+        .playlist-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .playlist-controls button {
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF to Audio Converter</h1>
+        <div class="upload-area" id="dropZone">
+            <p>Drag and drop your PDF file here or click to select</p>
+            <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+        </div>
+        <div class="page-range">
+            <div>
+                <label for="startPage">Start Page:</label>
+                <input type="number" id="startPage" min="1" value="1">
+            </div>
+            <div>
+                <label for="endPage">End Page:</label>
+                <input type="number" id="endPage" min="1" value="1">
+            </div>
+        </div>
+        <button id="convertButton" disabled>Convert to Audio</button>
+        <div id="errorMessage" class="error"></div>
+        <div id="successMessage" class="success"></div>
+    </div>
+
+    <div class="container">
+        <h2>Audio Player</h2>
+        <div class="status" id="status">Waiting for audio files...</div>
+        <audio id="audioPlayer" class="audio-player" controls></audio>
+        <div class="playlist-controls">
+            <button id="prevButton">Previous</button>
+            <button id="nextButton">Next</button>
+        </div>
+        <div class="playlist" id="playlist"></div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const convertButton = document.getElementById('convertButton');
+        const startPage = document.getElementById('startPage');
+        const endPage = document.getElementById('endPage');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const statusElement = document.getElementById('status');
+        const playlist = document.getElementById('playlist');
+        const prevButton = document.getElementById('prevButton');
+        const nextButton = document.getElementById('nextButton');
+
+        let audioFiles = [];
+        let currentIndex = -1;
+        let isPlaying = false;
+
+        // Handle drag and drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type === 'application/pdf') {
+                fileInput.files = e.dataTransfer.files;
+                convertButton.disabled = false;
+            } else {
+                showError('Please upload a PDF file');
+            }
+        });
+
+        // Handle click to select file
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                convertButton.disabled = false;
+            }
+        });
+
+        // Handle conversion
+        convertButton.addEventListener('click', async () => {
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('start_page', startPage.value);
+            formData.append('end_page', endPage.value);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showSuccess('File uploaded successfully');
+                    // Refresh the playlist
+                    updatePlaylist();
+                } else {
+                    showError(data.error || 'An error occurred');
+                }
+            } catch (error) {
+                showError('Error uploading file');
+                console.error('Error:', error);
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            successMessage.textContent = '';
+        }
+
+        function showSuccess(message) {
+            successMessage.textContent = message;
+            errorMessage.textContent = '';
+        }
+
+        function updatePlaylist() {
+            fetch('/get_audio_files')
+                .then(response => response.json())
+                .then(data => {
+                    const oldLength = audioFiles.length;
+                    audioFiles = data.audio_files;
+                    
+                    // If new files were added and we're not currently playing
+                    if (audioFiles.length > oldLength && (!isPlaying || audioPlayer.ended)) {
+                        // If we're at the end of the playlist or not playing anything
+                        if (currentIndex === -1 || currentIndex === oldLength - 1) {
+                            playAudio(audioFiles.length - 1);
+                        }
+                    }
+                    
+                    renderPlaylist();
+                })
+                .catch(error => {
+                    console.error('Error fetching audio files:', error);
+                });
+        }
+
+        function renderPlaylist() {
+            playlist.innerHTML = '';
+            audioFiles.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = `playlist-item ${index === currentIndex ? 'current' : ''}`;
+                item.textContent = file.split('/').pop();
+                item.addEventListener('click', () => playAudio(index));
+                playlist.appendChild(item);
+            });
+        }
+
+        function playAudio(index) {
+            if (index >= 0 && index < audioFiles.length) {
+                currentIndex = index;
+                isPlaying = true;
+                const audioPath = audioFiles[index];
+                statusElement.textContent = `Playing: ${audioPath.split('/').pop()}`;
+                audioPlayer.src = audioPath;
+                audioPlayer.load();
+                audioPlayer.play().catch(error => {
+                    console.error('Error playing audio:', error);
+                    showError('Error playing audio: ' + error.message);
+                    isPlaying = false;
+                });
+                renderPlaylist();
+            }
+        }
+
+        prevButton.addEventListener('click', () => {
+            if (currentIndex > 0) {
+                playAudio(currentIndex - 1);
+            }
+        });
+
+        nextButton.addEventListener('click', () => {
+            if (currentIndex < audioFiles.length - 1) {
+                playAudio(currentIndex + 1);
+            }
+        });
+
+        audioPlayer.addEventListener('ended', () => {
+            isPlaying = false;
+            if (currentIndex < audioFiles.length - 1) {
+                playAudio(currentIndex + 1);
+            } else {
+                statusElement.textContent = 'Playlist finished';
+            }
+        });
+
+        audioPlayer.addEventListener('play', () => {
+            isPlaying = true;
+        });
+
+        audioPlayer.addEventListener('pause', () => {
+            isPlaying = false;
+        });
+
+        // Check for new audio files every 2 seconds
+        setInterval(updatePlaylist, 2000);
+
+        // Initial playlist update
+        updatePlaylist();
+    </script>
+</body>
+</html> 
